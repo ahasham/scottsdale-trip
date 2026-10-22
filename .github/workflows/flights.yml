@@ -1,0 +1,28 @@
+# Live flight positions for the trip page. Every ~5 minutes on travel days, save the positions of the
+# flights in flights/callsigns.txt to flights.json on the flight-data branch, where the page reads them.
+name: flights
+on:
+  schedule:
+    - cron: "*/5 * 22,23,25,26 10 *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: flights
+  cancel-in-progress: true
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch positions
+        run: python3 flights/poll.py > /tmp/flights.json && cat /tmp/flights.json
+      - name: Publish to flight-data (one commit, replaced each run)
+        run: |
+          cd "$(mktemp -d)"
+          git init -q -b flight-data
+          cp /tmp/flights.json .
+          git add flights.json
+          git -c user.name=flights-bot -c user.email=flights-bot@users.noreply.github.com commit -q -m "Flight positions"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" flight-data
