@@ -1,5 +1,5 @@
 # Live flight positions for the trip page. On travel days, each hourly run polls every 3 minutes for
-# ~57 minutes and saves the positions of the flights in flights/callsigns.txt to flights.json on the
+# ~2 hours (the next run replaces it; overlap covers late or skipped starts) and saves the positions of the flights in flights/callsigns.txt to flights.json on the
 # flight-data branch, where the page reads them. (GitHub's 5-minute schedules start too unreliably.)
 name: flights
 on:
@@ -14,14 +14,14 @@ concurrency:
 jobs:
   poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 62
+    timeout-minutes: 125
     steps:
       - uses: actions/checkout@v4
       - name: Poll and publish every 3 minutes
         run: |
           pub="$(mktemp -d)"
           git -C "$pub" init -q -b flight-data
-          for i in $(seq 1 19); do
+          for i in $(seq 1 39); do
             if python3 flights/poll.py > /tmp/flights.json; then
               cp /tmp/flights.json "$pub/flights.json"
               git -C "$pub" add flights.json
@@ -30,5 +30,5 @@ jobs:
               git -C "$pub" push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" flight-data || echo "push failed, retrying next round"
               echo "round $i: $(head -c 300 /tmp/flights.json)"
             fi
-            [ "$i" -lt 19 ] && sleep 180
+            [ "$i" -lt 39 ] && sleep 180
           done
