@@ -1,9 +1,10 @@
-# Live flight positions for the trip page. Every ~5 minutes on travel days, save the positions of the
-# flights in flights/callsigns.txt to flights.json on the flight-data branch, where the page reads them.
+# Live flight positions for the trip page. On travel days, each hourly run polls every 3 minutes for
+# ~57 minutes and saves the positions of the flights in flights/callsigns.txt to flights.json on the
+# flight-data branch, where the page reads them. (GitHub's 5-minute schedules start too unreliably.)
 name: flights
 on:
   schedule:
-    - cron: "*/5 * 22,23,25,26 10 *"
+    - cron: "7 * 22,23,25,26 10 *"
   workflow_dispatch:
 permissions:
   contents: write
@@ -13,16 +14,21 @@ concurrency:
 jobs:
   poll:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 62
     steps:
       - uses: actions/checkout@v4
-      - name: Fetch positions
-        run: python3 flights/poll.py > /tmp/flights.json && cat /tmp/flights.json
-      - name: Publish to flight-data (one commit, replaced each run)
+      - name: Poll and publish every 3 minutes
         run: |
-          cd "$(mktemp -d)"
-          git init -q -b flight-data
-          cp /tmp/flights.json .
-          git add flights.json
-          git -c user.name=flights-bot -c user.email=flights-bot@users.noreply.github.com commit -q -m "Flight positions"
-          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" flight-data
+          pub="$(mktemp -d)"
+          git -C "$pub" init -q -b flight-data
+          for i in $(seq 1 19); do
+            if python3 flights/poll.py > /tmp/flights.json; then
+              cp /tmp/flights.json "$pub/flights.json"
+              git -C "$pub" add flights.json
+              git -C "$pub" -c user.name=flights-bot -c user.email=flights-bot@users.noreply.github.com commit -q --amend --allow-empty -m "Flight positions" 2>/dev/null \
+                || git -C "$pub" -c user.name=flights-bot -c user.email=flights-bot@users.noreply.github.com commit -q -m "Flight positions"
+              git -C "$pub" push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" flight-data || echo "push failed, retrying next round"
+              echo "round $i: $(head -c 300 /tmp/flights.json)"
+            fi
+            [ "$i" -lt 19 ] && sleep 180
+          done
